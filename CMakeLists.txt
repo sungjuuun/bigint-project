@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(BigIntExperiment LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+add_executable(bigint src/main.cpp)
+add_executable(bigint_profile src/main.cpp)
+target_compile_definitions(bigint_profile PRIVATE PROFILE)

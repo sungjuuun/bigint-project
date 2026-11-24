@@ -1,0 +1,15 @@
+PASS school immediate   8/  8: 344 cases
+PASS kara   immediate   8/  8: 344 cases
+PASS kara   immediate  32/128: 344 cases
+PASS toom   immediate   8/  8: 344 cases
+PASS toom   immediate  32/128: 344 cases
+PASS hybrid immediate   8/ 24: 344 cases
+PASS hybrid immediate  32/128: 344 cases
+PASS school deferred    8/  8: 344 cases
+PASS kara   deferred    8/  8: 344 cases
+PASS kara   deferred   32/128: 344 cases
+PASS toom   deferred    8/  8: 344 cases
+PASS toom   deferred   32/128: 344 cases
+PASS hybrid deferred    8/ 24: 344 cases
+PASS hybrid deferred   32/128: 344 cases
+PASS total=4816

@@ -1,0 +1,24 @@
+{
+	"folders": [
+		{
+			"name": "benchmark",
+			"path": "../benchmark"
+		},
+		{
+			"name": "docs",
+			"path": "../docs"
+		},
+		{
+			"name": "results",
+			"path": "../results"
+		},
+		{
+			"name": "src",
+			"path": "."
+		},
+		{
+			"name": "tests",
+			"path": "../tests"
+		}
+	]
+}
