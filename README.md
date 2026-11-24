@@ -89,3 +89,31 @@ echo '123456789 987654321' | ./build/bigint batch kara immediate 32 128
 초기 임계값 KT=32, TT=128은 튜닝되지 않은 예시다. 작은 입력에서는 타이머 및 시스템 잡음 영향이 크다. 최종 실험은 임계값 탐색, 독립 평가 시드, 더 세밀한 크기 간격, 메모리 계측 및 필요 시 복사 최적화를 추가한다. 개발 환경 측정값을 사용자 PC의 측정값과 섞지 않는다.
 
 AI 도움을 받은 구현과 연구 과정은 `docs/ai_usage.md`에 기록한다.
+
+## 실험 3: 재귀 비용 분해 (v0.2)
+
+기존 시간 측정(`bigint`) 및 논리적 연산량 계측(`bigint_profile`)과 별도로 `bigint_phases`를 빌드한다. Windows PowerShell에서 프로젝트 최상위 폴더를 열고 다음 명령을 실행한다.
+
+```powershell
+cmake --build build
+py tests/verify.py --exe build/bigint.exe
+py tests/verify.py --exe build/bigint_phases.exe
+py benchmark/cost_analysis.py
+```
+
+Linux에서는 `py` 대신 `python3`를 사용하고 실행 파일 경로의 `.exe`를 제거한다. 스크립트는 확장자 유무를 자동으로 처리한다. 추가 Python 패키지는 필요 없다. 기본 출력 폴더는 `results/local-cost`이다. 터미널에 나타나는 세 표를 보고서용으로 실제 캡처하고, `console.txt`와 CSV도 보존한다. 표가 너무 넓으면 터미널을 최대화한다. 최종 시간 비교는 이 버전에서 동일 환경으로 다시 측정하며 v0.1 초기 수치와 섞지 않는다.
+
+- `base`: Schoolbook 본체(출력 배열 및 누산 배열 생성 포함).
+- `split`: 입력 복사, 부호 제거, 분할.
+- `evaluate`: Karatsuba의 합 및 Toom-3 평가점 계산. Toom-3의 0과 무한대는 분할값을 직접 사용한다.
+- `interpolate`: 중간 계수 복원(덧셈, 뺄셈, 작은 상수 곱셈·나눗셈 포함).
+- `recombine`: 블록 이동 및 합산.
+- `residual`: 계측 실행의 총 시간에서 위 구간 시간을 뺀 값. 재귀 호출 관리, 분기, 일부 임시 객체 파괴, 타이머 및 집계 비용 등이 섞여 있으므로 특정 원인 하나의 비용이라고 단정하지 않는다.
+
+각 구간의 시간은 하위 재귀 호출을 포함하지 않아 중복 합산하지 않는다. 일반 실행과 구간 계측 실행을 각각 실행하며, 계측 시간/일반 시간 비율도 제시한다. 타이머 삽입으로 인한 캐시·컴파일 최적화·실행 시간 변화 때문에 계측 비율은 근사값이다. 구간을 분리하기 위해 임시 객체의 생존 범위를 변경했으므로 v0.1과 v0.2의 시간 차이를 계측 효과로만 해석해서는 안 된다. 모든 v0.2 비교는 동일한 새 구현을 사용한다.
+
+말단 길이 분포는 별도 연산량 계측 실행에서 수집한다. 크기가 같은 말단의 호출 수로 독립 Schoolbook 미세 벤치마크의 중앙값을 가중합한다. A/B의 말단 분포와 블록 곱셈 총량이 일치하는지 검사한다. 독립 측정은 실제 재귀 내부의 캐시·부호·메모리 상태를 완전히 재현하지 않는다. 가중 가속률과 계측한 개선 전 기초 비용 비율로 암달 모델의 예측을 계산하고, 일반 실행의 실측 가속률과 비교한다. 모델 오차를 없애기 위한 사후 보정은 하지 않는다.
+
+기본 실험 조건: 재귀 입력 512, 2048, 4096 limb, 입력별 9회 시간/구간 측정, 독립 입력 3쌍, 말단 미세 벤치마크 31회, KT=32, TT=128. 입력 생성 및 출력은 타이머 밖이다. 입력·설정별 중앙값을 먼저 계산하며 구간 비중은 반복별 비중의 평균이다. 일반 시간 및 가속률 요약은 입력별 값의 중앙값이다. `--sizes`, `--inputs`, `--reps`, `--leaf-reps`, `--output`으로 변경 가능하다.
+
+원본: `times.csv`, `phases.csv`, `leaves.csv`, `counts.csv`, `micro.csv`. 핵심 요약: `summary.csv`(비율 열은 %), `model.csv`(base_fraction은 0~1, 나머지는 배율), `console.txt`. `phases.csv`의 mode_id: 0 Schoolbook, 1 Karatsuba, 2 Toom-3. phase_id: 0 기초, 1 분할, 2 평가, 3 보간, 4 재조합. `total` 행의 -1은 구간 없음. `visits`는 구간 실행 횟수이다(Toom-3 평가 구간은 한 노드에서 최대 3회). `environment.txt`에는 실행 설정과 환경을 기록한다. `g++ --version`은 PATH의 컴파일러 정보이며 CMake가 실제 사용한 컴파일러는 `build/CMakeCache.txt`의 `CMAKE_CXX_COMPILER` 항목으로 확인한다.

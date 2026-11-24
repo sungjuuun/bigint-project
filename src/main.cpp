@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <array>
+#include <map>
+#include <utility>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -56,6 +59,29 @@ Big school(const Big&a,const Big&b,bool deferred){
         W c=0;for(size_t i=0;i<n+m;++i){W t=acc[i]+c;out[i]=U(t%BASE);c=t/BASE;COUNT(carry,1);}if(c)throw std::logic_error("carry overflow");
     }return Big(std::move(out),s);
 }
+// 시간 계측은 별도 실행 파일에서만 활성화한다. 각 구간은 재귀 호출을 포함하지 않는다.
+enum Phase { BASECASE, SPLIT, EVALUATE, INTERPOLATE, RECOMBINE, PHASES };
+#ifdef PHASE_PROFILE
+struct PhaseCell { W visits=0; double ns=0; };
+std::array<std::array<std::array<PhaseCell,PHASES>,3>,128> phase_data{};
+#endif
+#ifdef PROFILE
+bool collect_leaves=false;
+std::map<std::pair<size_t,size_t>,W> leaf_sizes;
+#endif
+template<class F> auto phase(Phase p, Algo mode, size_t depth, F&& fn){
+#ifdef PHASE_PROFILE
+    const auto start=std::chrono::steady_clock::now();
+    auto result=fn();
+    const auto stop=std::chrono::steady_clock::now();
+    auto& cell=phase_data.at(depth-1).at(static_cast<size_t>(mode)).at(p);
+    ++cell.visits; cell.ns+=std::chrono::duration<double,std::nano>(stop-start).count();
+    return result;
+#else
+    (void)p; (void)mode; (void)depth;
+    return fn();
+#endif
+}
 Big multiply(const Big&a,const Big&b,const Config& cfg,size_t depth=1){
     COUNT(calls,1);
 #ifdef PROFILE
@@ -66,26 +92,44 @@ Big multiply(const Big&a,const Big&b,const Config& cfg,size_t depth=1){
     if(mode==Algo::K && n<=cfg.kt)mode=Algo::S;
     if(mode==Algo::T && n<=cfg.tt)mode=Algo::S;
     if(mode==Algo::H)mode=n<=cfg.kt?Algo::S:n<=cfg.tt?Algo::K:Algo::T;
-    if(mode==Algo::S){COUNT(school,1);return school(a,b,cfg.deferred);}
-    // 재귀적 평가값은 부호를 갖는다. 크기만 곱한 뒤 최종 부호를 복원한다.
-    Big x=a,y=b;x.sign=y.sign=1;int s=a.sign*b.sign;
+    if(mode==Algo::S){COUNT(school,1);
+#ifdef PROFILE
+        if(collect_leaves)++leaf_sizes[{a.size(),b.size()}];
+#endif
+        return phase(BASECASE,mode,depth,[&]{return school(a,b,cfg.deferred);});
+    }
+    // 분할 및 부호 제거: 원본의 복사 비용도 분할 구간에 포함한다.
+    int s=a.sign*b.sign;
     auto rec=[&](const Big&u,const Big&v){return multiply(u,v,cfg,depth+1);};
     Big result;
     if(mode==Algo::K){COUNT(kara,1);size_t h=(n+1)/2;
-        Big a0=x.part(0,h),a1=x.part(h,h),b0=y.part(0,h),b1=y.part(h,h);
-        Big z0=rec(a0,b0),z2=rec(a1,b1),z1=rec(a0+a1,b0+b1)-z0-z2;
-        result=z0+z1.shift(h)+z2.shift(2*h);
+        auto parts=phase(SPLIT,mode,depth,[&]{Big x=a,y=b;x.sign=y.sign=1;return std::array<Big,4>{x.part(0,h),x.part(h,h),y.part(0,h),y.part(h,h)};});
+        const auto& [a0,a1,b0,b1]=parts;
+        Big z0=rec(a0,b0),z2=rec(a1,b1);
+        auto eval=phase(EVALUATE,mode,depth,[&]{return std::array<Big,2>{a0+a1,b0+b1};});
+        Big v=rec(eval[0],eval[1]);
+        Big z1=phase(INTERPOLATE,mode,depth,[&]{return v-z0-z2;});
+        result=phase(RECOMBINE,mode,depth,[&]{return z0+z1.shift(h)+z2.shift(2*h);});
     }else{COUNT(toom,1);size_t h=(n+2)/3;
-        Big a0=x.part(0,h),a1=x.part(h,h),a2=x.part(2*h,h),b0=y.part(0,h),b1=y.part(h,h),b2=y.part(2*h,h);
+        auto parts=phase(SPLIT,mode,depth,[&]{Big x=a,y=b;x.sign=y.sign=1;return std::array<Big,6>{x.part(0,h),x.part(h,h),x.part(2*h,h),y.part(0,h),y.part(h,h),y.part(2*h,h)};});
+        const auto& [a0,a1,a2,b0,b1,b2]=parts;
         Big c0=rec(a0,b0),c4=rec(a2,b2);
-        Big v1=rec(a0+a1+a2,b0+b1+b2),vm1=rec(a0-a1+a2,b0-b1+b2);
-        Big v2=rec(a0+scale(a1,2)+scale(a2,4),b0+scale(b1,2)+scale(b2,4));
-        Big c2=exactdiv(v1+vm1,2)-c0-c4;
-        Big odd=exactdiv(v1-vm1,2);
-        Big c3=exactdiv(v2-c0-scale(c2,4)-scale(c4,16)-scale(odd,2),6);
-        Big c1=odd-c3;
-        if(c1.sign<0||c2.sign<0||c3.sign<0)throw std::logic_error("negative coefficient");
-        result=c0+c1.shift(h)+c2.shift(2*h)+c3.shift(3*h)+c4.shift(4*h);
+        auto e1=phase(EVALUATE,mode,depth,[&]{return std::array<Big,2>{a0+a1+a2,b0+b1+b2};});
+        Big v1=rec(e1[0],e1[1]);
+        auto em=phase(EVALUATE,mode,depth,[&]{return std::array<Big,2>{a0-a1+a2,b0-b1+b2};});
+        Big vm1=rec(em[0],em[1]);
+        auto e2=phase(EVALUATE,mode,depth,[&]{return std::array<Big,2>{a0+scale(a1,2)+scale(a2,4),b0+scale(b1,2)+scale(b2,4)};});
+        Big v2=rec(e2[0],e2[1]);
+        auto coeff=phase(INTERPOLATE,mode,depth,[&]{
+            Big c2=exactdiv(v1+vm1,2)-c0-c4;
+            Big odd=exactdiv(v1-vm1,2);
+            Big c3=exactdiv(v2-c0-scale(c2,4)-scale(c4,16)-scale(odd,2),6);
+            Big c1=odd-c3;
+            if(c1.sign<0||c2.sign<0||c3.sign<0)throw std::logic_error("negative coefficient");
+            return std::array<Big,3>{std::move(c1),std::move(c2),std::move(c3)};
+        });
+        const auto& [c1,c2,c3]=coeff;
+        result=phase(RECOMBINE,mode,depth,[&]{return c0+c1.shift(h)+c2.shift(2*h)+c3.shift(3*h)+c4.shift(4*h);});
     }
     if(result.sign)result.sign=s;return result;
 }
@@ -98,6 +142,41 @@ int main(int argc,char**argv){try{
     if(argc<6)throw std::invalid_argument("usage: bigint batch|bench ALGO BASECASE KT TT [N SEED REPS]");
     std::string action=argv[1];Config cfg=config(argv[2],argv[3],std::stoull(argv[4]),std::stoull(argv[5]));
     if(action=="batch"){std::string a,b;while(std::cin>>a>>b)std::cout<<multiply(Big::parse(a),Big::parse(b),cfg).str()<<'\n';}
+    else if(action=="phases" && argc==9){
+#ifdef PHASE_PROFILE
+        size_t n=std::stoull(argv[6]);W seed=std::stoull(argv[7]);size_t reps=std::stoull(argv[8]);
+        if(!n||!reps)throw std::invalid_argument("n/reps > 0");
+        std::mt19937_64 r(seed);Big a=random_big(n,r),b=random_big(n,r);auto warm=multiply(a,b,cfg);sink=warm.at(0);
+        for(size_t i=0;i<reps;++i){phase_data={};auto start=std::chrono::steady_clock::now();auto z=multiply(a,b,cfg);auto stop=std::chrono::steady_clock::now();sink=z.at(0);
+            double total=std::chrono::duration<double,std::nano>(stop-start).count();
+            std::cout<<std::setprecision(17)<<"total,"<<i<<",0,-1,-1,1,"<<total<<'\n';
+            for(size_t d=0;d<phase_data.size();++d)for(size_t m=0;m<3;++m)for(size_t p=0;p<PHASES;++p){const auto& c=phase_data[d][m][p];if(c.visits)std::cout<<"phase,"<<i<<','<<d+1<<','<<m<<','<<p<<','<<c.visits<<','<<c.ns<<'\n';}
+        }
+#else
+        throw std::invalid_argument("phases requires bigint_phases");
+#endif
+    }
+    else if(action=="leaves" && argc==9){
+#ifdef PROFILE
+        size_t n=std::stoull(argv[6]);W seed=std::stoull(argv[7]);if(!n||std::stoull(argv[8])!=1)throw std::invalid_argument("n > 0, reps=1");
+        std::mt19937_64 r(seed);Big a=random_big(n,r),b=random_big(n,r);collect_leaves=true;auto z=multiply(a,b,cfg);sink=z.at(0);
+        for(const auto& [sizes,count]:leaf_sizes)std::cout<<sizes.first<<','<<sizes.second<<','<<count<<'\n';
+#else
+        throw std::invalid_argument("leaves requires bigint_profile");
+#endif
+    }
+    else if(action=="benchrect" && argc==10){
+#if !defined(PROFILE) && !defined(PHASE_PROFILE)
+        size_t n=std::stoull(argv[6]),m=std::stoull(argv[7]);W seed=std::stoull(argv[8]);size_t reps=std::stoull(argv[9]);
+        if(!n||!m||!reps||cfg.algo!=Algo::S)throw std::invalid_argument("school only, n/m/reps > 0");
+        std::mt19937_64 r(seed);Big a=random_big(n,r),b=random_big(m,r);auto warm=multiply(a,b,cfg);sink=warm.at(0);
+        std::vector<double> times;times.reserve(reps);
+        for(size_t i=0;i<reps;++i){auto start=std::chrono::steady_clock::now();auto z=multiply(a,b,cfg);auto stop=std::chrono::steady_clock::now();sink=z.at(0);times.push_back(std::chrono::duration<double,std::nano>(stop-start).count());}
+        for(double t:times)std::cout<<t<<'\n';
+#else
+        throw std::invalid_argument("benchrect requires bigint");
+#endif
+    }
     else if(action=="bench" && argc==9){size_t n=std::stoull(argv[6]);W seed=std::stoull(argv[7]);size_t reps=std::stoull(argv[8]);if(!n||!reps)throw std::invalid_argument("n/reps > 0");std::mt19937_64 r(seed);Big a=random_big(n,r),b=random_big(n,r);
 #ifdef PROFILE
         if(reps!=1)throw std::invalid_argument("profile reps=1");cnt={};auto z=multiply(a,b,cfg);sink=z.at(0);std::cout<<cnt.mul<<','<<cnt.accum<<','<<cnt.carry<<','<<cnt.add<<','<<cnt.sub<<','<<cnt.smallmul<<','<<cnt.smalldiv<<','<<cnt.calls<<','<<cnt.school<<','<<cnt.kara<<','<<cnt.toom<<','<<cnt.depth<<'\n';

@@ -5,3 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(bigint src/main.cpp)
 add_executable(bigint_profile src/main.cpp)
 target_compile_definitions(bigint_profile PRIVATE PROFILE)
+
+# 재귀 구간별 시간 계측 전용 (일반 시간 측정과 분리)
+add_executable(bigint_phases src/main.cpp)
+target_compile_definitions(bigint_phases PRIVATE PHASE_PROFILE)
