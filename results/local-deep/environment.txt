@@ -1,0 +1,17 @@
+platform=Windows-11-10.0.22631-SP0
+processor=Intel64 Family 6 Model 140 Stepping 1, GenuineIntel
+python=3.15.2 (tags/v3.15.2:5e58eaa, Oct 25 2026, 17:27:03) [MSC v.1951 64 bit (AMD64)]
+args=Namespace(exe='build/bigint', profile='build/bigint_profile', phases='build/bigint_phases', inputs=5, rounds=3, reps=7, target_ns=1000000, seed=65000, output=None, quick=False)
+git=b3b97af09712019f4da61ef7b0590d42f38434b6
+git_status=?? results/local-cost-v04/
+?? results/local-deep/
+compiler_on_PATH=g++ (Rev7, Built by MSYS2 project) 16.2.0
+Copyright (C) 2026 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+bigint.exe_sha256=8d2d8b2125f3c3bb2078b5abd3bef29e2531e3e98e909480ecbb030ca8e0cd73
+bigint_profile.exe_sha256=1e4bf0ce2177c9c7931f9356c1e32b412399e3d2bd30aa2885e9057ff2413a88
+bigint_phases.exe_sha256=6b19bac4888a5adee58521f5028c50a5534130007a2c89f2d8ae12969e51ef62
+CMAKE_BUILD_TYPE:STRING=Release
+CMAKE_CXX_COMPILER:FILEPATH=C:/msys64/ucrt64/bin/c++.exe
+CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
