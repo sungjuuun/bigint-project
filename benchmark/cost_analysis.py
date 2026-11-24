@@ -51,8 +51,9 @@ def main():
     p.add_argument('--inputs', type=int, default=3)
     p.add_argument('--reps', type=int, default=9)
     p.add_argument('--leaf-reps', type=int, default=31)
+    p.add_argument('--micro-target-ns',type=int,default=100000,help='작은 말단 곱셈의 묶음 목표 시간')
     args = p.parse_args()
-    if min(args.sizes) < 1 or min(args.inputs, args.reps, args.leaf_reps) < 1:
+    if min(args.sizes) < 1 or min(args.inputs, args.reps, args.leaf_reps, args.micro_target_ns) < 1:
         p.error('모든 크기와 반복 수는 양수여야 함')
     dest = Path(args.output)
     dest.mkdir(parents=True, exist_ok=True)
@@ -71,11 +72,16 @@ def main():
         if key not in cache:
             order = list(BASES)
             rng.shuffle(order)
-            result = {}
-            for b in order:
-                ts = times(exe, 'benchrect', 'school', b, 32, 128, n, m, seed, reps=args.leaf_reps)
-                raw_micro.extend((n, m, seed, b, j, t) for j, t in enumerate(ts))
-                result[b] = st.median(ts)
+            # 같은 입력을 생성한 한 프로세스에서 A/B를 묶어 측정한다.
+            data=''.join(f'school {b} 32 128 0\n' for b in order)
+            lines=subprocess.check_output([exe,'rectgrid','school','immediate','32','128',str(n),str(m),str(seed),str(args.leaf_reps),str(args.micro_target_ns)],input=data,text=True).splitlines()
+            found=defaultdict(list)
+            for line in lines:
+                alg,b,k,t,one,j,batch,elapsed=line.split(',');j,batch,elapsed=int(j),int(batch),float(elapsed)
+                if alg!='school' or b not in BASES or batch<1 or elapsed<=0:raise RuntimeError('미세 측정 데이터 오류')
+                ns=elapsed/batch;found[b].append((j,ns));raw_micro.append((n,m,seed,b,j,batch,elapsed,ns))
+            if set(found)!=set(BASES) or any(sorted(j for j,_ in v)!=list(range(args.leaf_reps)) for v in found.values()):raise RuntimeError('미세 측정 반복 누락')
+            result={b:st.median(ns for _,ns in v) for b,v in found.items()}
             cache[key] = result
         return cache[key]
 
@@ -167,7 +173,7 @@ def main():
     write_csv(dest/'phases.csv', prefix+['kind','repeat','depth','mode_id','phase_id','visits','ns'], raw_ph)
     write_csv(dest/'leaves.csv', prefix+['left_limbs','right_limbs','calls'], raw_leaf)
     write_csv(dest/'counts.csv', prefix+'mul accum carry add sub smallmul smalldiv calls school kara toom depth'.split(),count_rows)
-    write_csv(dest/'micro.csv',['left_limbs','right_limbs','seed','basecase','repeat','ns'],raw_micro)
+    write_csv(dest/'micro.csv',['left_limbs','right_limbs','seed','basecase','repeat','batch','elapsed_ns','ns_per_call'],raw_micro)
     write_csv(dest/'summary.csv',['limbs','algorithm','basecase','normal_median_ns',*PHASES,'instrumentation_ratio'],summary)
     write_csv(dest/'model.csv',['limbs','seed','algorithm','base_fraction','leaf_speedup','predicted','observed'],model)
     (dest/'console.txt').write_text('\n'.join(log)+'\n',encoding='utf-8')
