@@ -47,7 +47,7 @@ Big operator-(const Big&a,Big b){b.sign=-b.sign;return a+b;}
 Big scale(const Big&a,U k){if(!a.sign||!k)return {};std::vector<U> v(a.size());W c=0;for(size_t i=0;i<a.size();++i){W t=W(a.d[i])*k+c;v[i]=U(t%BASE);c=t/BASE;COUNT(smallmul,1);}while(c){v.push_back(U(c%BASE));c/=BASE;}return Big(std::move(v),a.sign);}
 Big exactdiv(const Big&a,U k){if(!k)throw std::logic_error("division by zero");if(!a.sign)return {};std::vector<U> v(a.size());W r=0;for(size_t i=a.size();i>0;--i){W t=r*BASE+a.d[i-1];v[i-1]=U(t/k);r=t%k;COUNT(smalldiv,1);}if(r)throw std::logic_error("non-exact interpolation division");return Big(std::move(v),a.sign);}
 enum class Algo{S,K,T,H};
-struct Config{Algo algo=Algo::S;bool deferred=false;size_t kt=32,tt=128;};
+struct Config{Algo algo=Algo::S;bool deferred=false;size_t kt=32,tt=128;bool one_level=false;};
 Big school(const Big&a,const Big&b,bool deferred){
     if(!a.sign||!b.sign)return {};size_t n=a.size(),m=b.size();std::vector<U> out(n+m);int s=a.sign*b.sign;
     if(!deferred){
@@ -92,6 +92,7 @@ Big multiply(const Big&a,const Big&b,const Config& cfg,size_t depth=1){
     if(mode==Algo::K && n<=cfg.kt)mode=Algo::S;
     if(mode==Algo::T && n<=cfg.tt)mode=Algo::S;
     if(mode==Algo::H)mode=n<=cfg.kt?Algo::S:n<=cfg.tt?Algo::K:Algo::T;
+    if(cfg.one_level && depth>1)mode=Algo::S;
     if(mode==Algo::S){COUNT(school,1);
 #ifdef PROFILE
         if(collect_leaves)++leaf_sizes[{a.size(),b.size()}];
@@ -141,7 +142,26 @@ volatile W sink=0;
 int main(int argc,char**argv){try{
     if(argc<6)throw std::invalid_argument("usage: bigint batch|bench ALGO BASECASE KT TT [N SEED REPS]");
     std::string action=argv[1];Config cfg=config(argv[2],argv[3],std::stoull(argv[4]),std::stoull(argv[5]));
-    if(action=="batch"){std::string a,b;while(std::cin>>a>>b)std::cout<<multiply(Big::parse(a),Big::parse(b),cfg).str()<<'\n';}
+    if(action=="batch" || action=="batchone"){cfg.one_level=(action=="batchone");std::string a,b;while(std::cin>>a>>b)std::cout<<multiply(Big::parse(a),Big::parse(b),cfg).str()<<'\n';}
+    // 동일한 입력으로 여러 설정을 비교하고 작은 연산은 묶어서 측정한다.
+    else if(action=="grid" && argc==10){
+#if !defined(PROFILE) && !defined(PHASE_PROFILE)
+        size_t n=std::stoull(argv[6]); W seed=std::stoull(argv[7]); size_t reps=std::stoull(argv[8]); double target=std::stod(argv[9]);
+        if(!n||!reps||target<=0)throw std::invalid_argument("invalid grid parameters");
+        std::mt19937_64 r(seed); Big a=random_big(n,r),b=random_big(n,r);
+        std::string algo,base;size_t kt,tt;int one;
+        while(std::cin>>algo>>base>>kt>>tt>>one){
+            Config c=config(algo,base,kt,tt);c.one_level=(one!=0);
+            auto warm=multiply(a,b,c);sink=warm.at(0);
+            // 묶음 측정에는 결과 객체의 파괴도 포함된다. 모든 설정에 동일 적용.
+            auto batch=[&](size_t k){auto start=std::chrono::steady_clock::now();for(size_t i=0;i<k;++i){auto z=multiply(a,b,c);sink=z.at(0);}return std::chrono::duration<double,std::nano>(std::chrono::steady_clock::now()-start).count();};
+            size_t k=1;while(k<32768 && batch(k)<target)k*=2;
+            for(size_t j=0;j<reps;++j){double elapsed=batch(k);std::cout<<algo<<','<<base<<','<<kt<<','<<tt<<','<<one<<','<<j<<','<<k<<','<<std::setprecision(17)<<elapsed<<'\n';}
+        }
+#else
+        throw std::invalid_argument("grid requires bigint");
+#endif
+    }
     else if(action=="phases" && argc==9){
 #ifdef PHASE_PROFILE
         size_t n=std::stoull(argv[6]);W seed=std::stoull(argv[7]);size_t reps=std::stoull(argv[8]);

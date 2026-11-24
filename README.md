@@ -117,3 +117,23 @@ Linux에서는 `py` 대신 `python3`를 사용하고 실행 파일 경로의 `.e
 기본 실험 조건: 재귀 입력 512, 2048, 4096 limb, 입력별 9회 시간/구간 측정, 독립 입력 3쌍, 말단 미세 벤치마크 31회, KT=32, TT=128. 입력 생성 및 출력은 타이머 밖이다. 입력·설정별 중앙값을 먼저 계산하며 구간 비중은 반복별 비중의 평균이다. 일반 시간 및 가속률 요약은 입력별 값의 중앙값이다. `--sizes`, `--inputs`, `--reps`, `--leaf-reps`, `--output`으로 변경 가능하다.
 
 원본: `times.csv`, `phases.csv`, `leaves.csv`, `counts.csv`, `micro.csv`. 핵심 요약: `summary.csv`(비율 열은 %), `model.csv`(base_fraction은 0~1, 나머지는 배율), `console.txt`. `phases.csv`의 mode_id: 0 Schoolbook, 1 Karatsuba, 2 Toom-3. phase_id: 0 기초, 1 분할, 2 평가, 3 보간, 4 재조합. `total` 행의 -1은 구간 없음. `visits`는 구간 실행 횟수이다(Toom-3 평가 구간은 한 노드에서 최대 3회). `environment.txt`에는 실행 설정과 환경을 기록한다. `g++ --version`은 PATH의 컴파일러 정보이며 CMake가 실제 사용한 컴파일러는 `build/CMakeCache.txt`의 `CMAKE_CXX_COMPILER` 항목으로 확인한다.
+
+## 실험 4~6: 단일 분할의 손익 및 전환 임계값 (v0.3)
+
+Windows PowerShell에서 프로젝트 최상위 폴더를 열고 다음 명령을 실행한다.
+
+```powershell
+cmake --build build
+py tests/verify.py --exe build/bigint.exe
+py tests/verify_one_level.py --exe build/bigint.exe
+py benchmark/threshold_analysis.py
+```
+
+기존 검증 4,816건 및 단일 분할 검증 1,376건을 확인한다. Linux에서는 `python3`를 사용하고 `.exe`를 생략한다. 기존 `results/local-cost`는 덮어쓰지 않는다. 새로운 결과는 `results/local-threshold`에 저장한다. `--quick`은 기능 점검 전용이며 최종 데이터로 사용하지 않는다.
+
+- **단일 분할:** 루트에서 Karatsuba 또는 Toom-3를 정확히 한 번 적용하고 모든 자식은 Schoolbook으로 계산한다(루트 크기 8 초과). 두 베이스에서 각각 같은 베이스의 Schoolbook과 비교한다. 16~4096 limb의 17개 크기, 입력 시드 52001~52003. 가속률 중앙값이 1.05 이상인 관측 크기가 두 개 연속인 첫 구간을 표시한다. 이는 잡음에 민감한 단일 교차점을 피하기 위한 운영상 기준이며 통계적 유의성 또는 수학적 교차점을 보장하지 않는다.
+- **임계값 튜닝:** 8,16,32,64,128,256,512,1024,2048 후보. Karatsuba는 KT만, Toom-3는 TT만, Hybrid는 KT≤TT인 모든 후보 쌍을 탐색한다. 256,1024,4096 limb, 시드 53001~53002에서 동일 베이스 Schoolbook 대비 상대 시간의 기하평균을 최소화한다. 입력 크기와 시드에 동일 가중치를 부여한다. 선택 결과는 후보 범위/목적 함수에 종속된다. 경계 후보가 선택되면 범위 확장이 필요할 수 있다.
+- **독립 평가:** 128~8192 limb의 7개 크기와 시드 54001~54003으로 고정 KT=32,TT=128 및 튜닝 결과를 비교한다. 입력별 반복 중앙값을 얻고 동일 입력의 시간 비율을 계산한 뒤 입력 간 중앙값을 보고한다. Hybrid는 각 튜닝된 Karatsuba/Toom-3 및 가장 빠른 비혼합 전략과 직접 비교한다. KT=TT인 Hybrid는 중간 Karatsuba 구간이 없는 정책이다. 순수 Karatsuba의 TT와 순수 Toom-3의 KT는 사용되지 않는다.
+- **묶음 시간 측정:** `grid` 명령은 같은 프로세스에서 입력을 한 번 생성하고 설정 순서를 고정 시드로 섞는다. 설정별 워밍업 후 묶음 시간을 약 1ms 이상으로 늘리도록 반복 수를 2배씩 조정(최대 32768회)한다. 7개 묶음의 시간/반복 수를 기록한다. 입력 생성과 워밍업, 출력은 제외하지만 결과 객체 파괴와 반복문의 비용은 포함한다. v0.2의 단일 호출 타이밍과 측정 경계가 다르므로 시간 숫자를 그대로 혼합하지 않는다. 동일 묶음에서 같은 입력을 반복 사용하므로 warm-cache 성격을 갖는다.
+
+핵심 파일: `console.txt`(실제 화면과 같은 요약), `one_level.csv`(분할 손익), `tuning.csv`(모든 후보의 상대 시간), `holdout.csv`(독립 평가), `hybrid.csv`(혼합 직접 비교). `raw.csv`는 원본이고 `environment.txt`는 환경과 실행 인자 기록이다. 실행 화면에서 1번 역전 구간, 2번 임계값 선택, 4~5번 독립 평가 요약을 캡처한다. 표 3은 필요할 때 CSV로 확인한다.
