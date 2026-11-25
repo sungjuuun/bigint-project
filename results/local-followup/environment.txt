@@ -1,0 +1,16 @@
+Namespace(quick=False, inputs=7, rounds=3, reps=7, seed=97000, output='results/local-followup', build='build')
+Windows-11-10.0.22631-SP0
+Intel64 Family 6 Model 140 Stepping 1, GenuineIntel
+3.15.2 (tags/v3.15.2:5e58eaa, Oct 25 2026, 17:27:03) [MSC v.1951 64 bit (AMD64)]
+e5c3803839d58ef0d178f2fcd7eaca26bb7f89a4
+?? results/local-followup/
+g++ (Rev7, Built by MSYS2 project) 16.2.0
+Copyright (C) 2026 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+bigint.exe 8d2d8b2125f3c3bb2078b5abd3bef29e2531e3e98e909480ecbb030ca8e0cd73
+bigint_profile.exe 1e4bf0ce2177c9c7931f9356c1e32b412399e3d2bd30aa2885e9057ff2413a88
+bigint_phases.exe 6b19bac4888a5adee58521f5028c50a5534130007a2c89f2d8ae12969e51ef62
+CMAKE_BUILD_TYPE:STRING=Release
+CMAKE_CXX_COMPILER:FILEPATH=C:/msys64/ucrt64/bin/c++.exe
+CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -DNDEBUG
